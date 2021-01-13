@@ -23,6 +23,8 @@ try:
 except ImportError:
     pass
 
+os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
+
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -205,8 +207,9 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     end = time.time()
     for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
-
-        images = torch.cat([images[0], images[1]], dim=0)
+        # images[i]  [bsz, 3. 32, 32]
+        # labels [bsz]
+        images = torch.cat([images[0], images[1]], dim=0)  # [bsz*2, 3, 32, 32]
         if torch.cuda.is_available():
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
@@ -216,9 +219,9 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
         # compute loss
-        features = model(images)
-        f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        features = model(images)  # features [bsz*2, feat_dim]
+        f1, f2 = torch.split(features, [bsz, bsz], dim=0)  # f1, f2 [bsz, feat_dim]
+        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # features [bsz, 2, feat_dim]
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
         elif opt.method == 'SimCLR':

@@ -135,19 +135,17 @@ def resnet34(**kwargs):
 def resnet50(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 
-def resnet50_ecg(**kwargs):
-    return ResNet(Bottleneck, [3, 4, 6, 3], in_channel=1, **kwargs)
-
 
 def resnet101(**kwargs):
     return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
 
+def resnet50_ecg(**kwargs):
+    return ResNet(Bottleneck, [3, 4, 6, 3], in_channel=1, **kwargs)
 
 model_dict = {
     'resnet18': [resnet18, 512],
     'resnet34': [resnet34, 512],
     'resnet50': [resnet50, 2048],
-    'resnet50_ecg': [resnet50_ecg, 2048],
     'resnet101': [resnet101, 2048],
 }
 
@@ -211,15 +209,3 @@ class LinearClassifier(nn.Module):
 
     def forward(self, features):
         return self.fc(features)
-
-
-class SupCEResECGNet(nn.Module):
-    """encoder + classifier"""
-    def __init__(self, name='resnet50_ecg', num_classes=4):
-        super(SupCEResECGNet, self).__init__()
-        model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
-        self.fc = nn.Linear(dim_in, num_classes)
-
-    def forward(self, x):
-        return self.fc(self.encoder(x))

@@ -6,6 +6,7 @@ from __future__ import print_function
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 class SupConLoss(nn.Module):
@@ -73,6 +74,13 @@ class SupConLoss(nn.Module):
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
 
+
+        a = anchor_feature.detach().cpu().numpy()
+        b = contrast_feature.T.detach().cpu().numpy()
+        c = anchor_dot_contrast.detach().cpu().numpy()
+        d = np.matmul(a, b)
+
+
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
@@ -96,3 +104,7 @@ class SupConLoss(nn.Module):
         loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
+
+    def testNan(self, x):
+        x = x.detach().cpu().numpy()
+        return np.isnan(x).any()

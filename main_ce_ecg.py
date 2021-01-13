@@ -11,11 +11,17 @@ import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
 
+
 from util import AverageMeter
-from util import adjust_learning_rate, warmup_learning_rate, accuracy
+from util import adjust_learning_rate, warmup_learning_rate, accuracy, calculate_auc, calculate_other_metrics
 from util import set_optimizer, save_model
 from util import EarlyStopping
-from networks.resnet_big import SupCEResNet
+from networks.resnet_big import SupCEResECGNet
+from networks.CNN import CNN
+from networks.CLOCSNET import cnn_network_contrastive, second_cnn_network
+from datasets import Chapman
+
+import numpy as np
 
 try:
     import apex
@@ -25,7 +31,7 @@ except ImportError:
 
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '1, 2, 3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -56,7 +62,7 @@ def parse_option():
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--dataset', type=str, default='cifar10',
-                        choices=['cifar10', 'cifar100'], help='dataset')
+                        choices=['cifar10', 'cifar100', 'chapman'], help='dataset')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -113,6 +119,8 @@ def parse_option():
         opt.n_cls = 10
     elif opt.dataset == 'cifar100':
         opt.n_cls = 100
+    elif opt.dataset == 'chapman':
+        opt.n_cls = 4
     else:
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
 
@@ -127,20 +135,22 @@ def set_loader(opt):
     elif opt.dataset == 'cifar100':
         mean = (0.5071, 0.4867, 0.4408)
         std = (0.2675, 0.2565, 0.2761)
+    elif opt.dataset == 'chapman':
+        pass
     else:
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
-    normalize = transforms.Normalize(mean=mean, std=std)
+    #normalize = transforms.Normalize(mean=mean, std=std)
 
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
-        transforms.RandomHorizontalFlip(),
+        #transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
+        #transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        normalize,
+     #   normalize,
     ])
 
     val_transform = transforms.Compose([
         transforms.ToTensor(),
-        normalize,
+      #  normalize,
     ])
 
     if opt.dataset == 'cifar10':
@@ -157,6 +167,15 @@ def set_loader(opt):
         val_dataset = datasets.CIFAR100(root=opt.data_folder,
                                         train=False,
                                         transform=val_transform)
+    elif opt.dataset == 'chapman':
+        train_dataset = Chapman(train=True,
+                                opt=opt,
+                                #transform=train_transform
+                                )
+        val_dataset = Chapman(train=False,
+                              opt=opt,
+                              #transform=val_transform
+                              )
     else:
         raise ValueError(opt.dataset)
 
@@ -172,7 +191,21 @@ def set_loader(opt):
 
 
 def set_model(opt):
-    model = SupCEResNet(name=opt.model, num_classes=opt.n_cls)
+    if opt.model == 'resnet50':
+        model = SupCEResECGNet(num_classes=opt.n_cls)
+    elif opt.model == 'CNN':
+        model = CNN(num_classes=opt.n_cls)
+    elif opt.model == 'CLOCSNET':
+        device = (torch.device('cuda'))
+        model = second_cnn_network(first_model=cnn_network_contrastive(
+            dropout_type='drop1d',
+            p1=0.2,
+            p2=0.2,
+            p3=0.2,
+            device=device), noutputs=opt.n_cls)
+    else:
+        raise ValueError('model not supported: {}'.format(opt.model))
+
     criterion = torch.nn.CrossEntropyLoss()
 
     # enable synchronized Batch Normalization
@@ -202,6 +235,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
+        #print(images.shape, labels.shape)
         images = images.cuda(non_blocking=True)
         labels = labels.cuda(non_blocking=True)
         bsz = labels.shape[0]
@@ -211,12 +245,20 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 
         # compute loss
         output = model(images)
+
+        #a = output.cpu().detach().numpy()
         loss = criterion(output, labels)
 
         # update metric
         losses.update(loss.item(), bsz)
-        acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+        #acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+        acc1 = accuracy(output, labels)[0]
         top1.update(acc1[0], bsz)
+        auc = calculate_auc(n_class=opt.n_cls,
+                            outputs_list=output,
+                            labels_list=labels)
+        precision, recall, f1 = calculate_other_metrics(output, labels)
+
 
         # SGD
         optimizer.zero_grad()
@@ -227,18 +269,27 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         batch_time.update(time.time() - end)
         end = time.time()
 
+
         # print info
+        #print(losses.val, losses.avg)
+        #print(top1.val, top1.avg)
         if (idx + 1) % opt.print_freq == 0:
             print('Train: [{0}][{1}/{2}]\t'
                   'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'loss {loss.val:.3f} ({loss.avg:.3f})\t'
-                  'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                  'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                  'Auc {auc:.3f}\t'
+                  'precision {precision:.3f}\t'
+                  'recall {recall:.3f}\t'
+                  'f1 {f1:.3f}'.format(
                    epoch, idx + 1, len(train_loader), batch_time=batch_time,
-                   data_time=data_time, loss=losses, top1=top1))
+                   data_time=data_time, loss=losses, top1=top1, auc=auc,
+                    precision=precision, recall=recall, f1=f1
+            ))
             sys.stdout.flush()
 
-    return losses.avg, top1.avg
+    return losses.avg, top1.avg, auc, precision, recall, f1
 
 
 def validate(val_loader, model, criterion, opt):
@@ -262,8 +313,14 @@ def validate(val_loader, model, criterion, opt):
 
             # update metric
             losses.update(loss.item(), bsz)
-            acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+            #acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+            acc1 = accuracy(output, labels)[0]
             top1.update(acc1[0], bsz)
+
+            auc = calculate_auc(n_class=opt.n_cls,
+                                outputs_list=output,
+                                labels_list=labels)
+            precision, recall, f1 = calculate_other_metrics(output, labels)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -273,16 +330,26 @@ def validate(val_loader, model, criterion, opt):
                 print('Test: [{0}/{1}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Auc {auc:.3f}'
+                      'precision {precision:.3f}\t'
+                      'recall {recall:.3f}\t'
+                      'f1 {f1:.3f}'.format(
                        idx, len(val_loader), batch_time=batch_time,
-                       loss=losses, top1=top1))
+                       loss=losses, top1=top1, auc=auc,precision=precision, recall=recall, f1=f1))
 
     print(' * Acc@1 {top1.avg:.3f}'.format(top1=top1))
-    return losses.avg, top1.avg
+    print(' * Auc {auc:.3f}'.format(auc=auc))
+    print(' * precision {precision:.3f}'.format(precision=precision))
+    print(' * recall {recall:.3f}'.format(recall=recall))
+    print(' * f1 {f1:.3f}'.format(f1=f1))
+    return losses.avg, top1.avg, auc, precision, recall, f1
 
 
 def main():
     best_acc = 0
+    best_auc = 0
+    best_loss = 1e5
     opt = parse_option()
 
     # build data loader
@@ -303,22 +370,40 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, opt)
+        loss, train_acc, auc, precision, recall, f1 = train(train_loader, model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         # tensorboard logger
         logger.log_value('train_loss', loss, epoch)
         logger.log_value('train_acc', train_acc, epoch)
+        logger.log_value('train_auc', auc, epoch)
+        logger.log_value('train_precision', precision, epoch)
+        logger.log_value('train_recall', recall, epoch)
+        logger.log_value('train_f1', f1, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         # evaluation
-        loss, val_acc = validate(val_loader, model, criterion, opt)
+        loss, val_acc, val_auc, val_precision, val_recall, val_f1 = validate(val_loader, model, criterion, opt)
         logger.log_value('val_loss', loss, epoch)
         logger.log_value('val_acc', val_acc, epoch)
+        logger.log_value('val_auc', val_auc, epoch)
+        logger.log_value('val_precision', val_precision, epoch)
+        logger.log_value('val_recall', val_recall, epoch)
+        logger.log_value('val_f1', val_f1, epoch)
+
+        metrics = dict()
+        if loss < best_loss:
+            metrics['acc'] = val_acc
+            metrics['auc'] = val_auc
+            metrics['precision'] = val_precision
+            metrics['recall'] = val_recall
+            metrics['f1'] = val_f1
 
         if val_acc > best_acc:
             best_acc = val_acc
+        if val_auc > best_auc:
+            best_auc = val_auc
 
         if epoch % opt.save_freq == 0:
             save_file = os.path.join(
@@ -328,7 +413,7 @@ def main():
         # early_stopping
         patience = 7
         early_stopping = EarlyStopping(patience=patience, verbose=True)
-        early_stopping(val_acc, model)
+        early_stopping(loss, model)
         if early_stopping.early_stop:
             print('Early stopping')
             save_file = os.path.join(
@@ -341,8 +426,14 @@ def main():
         opt.save_folder, 'last.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
-    print('best accuracy: {:.2f}'.format(best_acc))
 
+    #print('best accuracy: {:.2f}'.format(best_acc))
+    #print('best auc: {:.2f}'.format(best_auc))
+    print('accuracy: {:.4f}'.format(metrics['acc']))
+    print('auc: {:.4f}'.format(metrics['auc']))
+    print('precision: {:.4f}'.format(metrics['precision']))
+    print('recall: {:.4f}'.format(metrics['recall']))
+    print('f1: {:.4f}'.format(metrics['f1']))
 
 if __name__ == '__main__':
     main()
