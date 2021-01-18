@@ -7,6 +7,7 @@ import time
 import math
 
 import tensorboard_logger as tb_logger
+from tensorboardX import SummaryWriter
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
@@ -16,7 +17,7 @@ from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy, calculate_auc, calculate_other_metrics
 from util import set_optimizer, save_model
 from util import EarlyStopping
-from networks.resnet_big import SupCEResECGNet
+from networks.resnet_big import SupCEResNet
 from networks.CNN import CNN
 from networks.CLOCSNET import cnn_network_contrastive, second_cnn_network
 from datasets import Chapman
@@ -31,7 +32,7 @@ except ImportError:
 
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -192,16 +193,16 @@ def set_loader(opt):
 
 def set_model(opt):
     if opt.model == 'resnet50':
-        model = SupCEResECGNet(num_classes=opt.n_cls)
+        model = SupCEResNet(name='resnet50_ecg', num_classes=opt.n_cls)
     elif opt.model == 'CNN':
         model = CNN(num_classes=opt.n_cls)
     elif opt.model == 'CLOCSNET':
-        device = (torch.device('cuda'))
+        device = (torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
         model = second_cnn_network(first_model=cnn_network_contrastive(
             dropout_type='drop1d',
-            p1=0.2,
-            p2=0.2,
-            p3=0.2,
+            p1=0.1,
+            p2=0.1,
+            p3=0.1,
             device=device), noutputs=opt.n_cls)
     else:
         raise ValueError('model not supported: {}'.format(opt.model))
@@ -363,6 +364,7 @@ def main():
 
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    writer = SummaryWriter(comment='supervised')
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -382,6 +384,11 @@ def main():
         logger.log_value('train_recall', recall, epoch)
         logger.log_value('train_f1', f1, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+        writer.add_graph(model, input_to_model=None, verbose=False)
+        writer.add_scalar('train_loss', loss, epoch)
+        writer.add_scalar('train_acc', train_acc, epoch)
+        writer.add_scalar('train_auc', auc, epoch)
+        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         # evaluation
         loss, val_acc, val_auc, val_precision, val_recall, val_f1 = validate(val_loader, model, criterion, opt)
@@ -391,6 +398,10 @@ def main():
         logger.log_value('val_precision', val_precision, epoch)
         logger.log_value('val_recall', val_recall, epoch)
         logger.log_value('val_f1', val_f1, epoch)
+        writer.add_scalar('val_loss', loss, epoch)
+        writer.add_scalar('val_acc', val_acc, epoch)
+        writer.add_scalar('val_auc', val_auc, epoch)
+
 
         metrics = dict()
         if loss < best_loss:

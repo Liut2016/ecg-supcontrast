@@ -7,6 +7,7 @@ import time
 import math
 
 import tensorboard_logger as tb_logger
+from tensorboardX import SummaryWriter
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
@@ -19,6 +20,7 @@ from networks.resnet_big import SupConResNet
 from networks.CLOCSNET import cnn_network_contrastive
 from losses import SupConLoss
 from datasets import Chapman
+from transforms_ecg import AddGaussianNoise
 
 try:
     import apex
@@ -26,8 +28,8 @@ try:
 except ImportError:
     pass
 
-
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -38,7 +40,7 @@ def parse_option():
                         help='save frequency')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='batch_size')
-    parser.add_argument('--num_workers', type=int, default=16,
+    parser.add_argument('--num_workers', type=int, default=0,
                         help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
@@ -149,18 +151,19 @@ def set_loader(opt):
     else:
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
     #normalize = transforms.Normalize(mean=mean, std=std)
-    '''
+
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.ToTensor(),
-        normalize,
+        #transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+        #transforms.RandomHorizontalFlip(),
+        #transforms.RandomApply([
+        #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+        #], p=0.8),
+        #transforms.RandomGrayscale(p=0.2),
+        AddGaussianNoise(),
+        #transforms.ToTensor(),
+        #normalize,
     ])
-    '''
+
     if opt.dataset == 'cifar10':
         train_dataset = datasets.CIFAR10(root=opt.data_folder,
                                          transform=TwoCropTransform(train_transform),
@@ -174,8 +177,8 @@ def set_loader(opt):
                                             transform=TwoCropTransform(train_transform))
     elif opt.dataset == 'chapman':
         train_dataset = Chapman(
-            opt=opt
-            #transform=TwoCropTransform(train_transform)
+            opt=opt,
+            transform=TwoCropTransform(train_transform)
         )
     else:
         raise ValueError(opt.dataset)
@@ -194,11 +197,11 @@ def set_model(opt):
     elif opt.model == 'CLOCSNET':
         model = cnn_network_contrastive(
             dropout_type='drop1d',
-            p1=0.2,
-            p2=0.2,
-            p3=0.2,
+            p1=0.1,
+            p2=0.1,
+            p3=0.1,
             embedding_dim=128,
-            device=(torch.device('cuda'))
+            device=(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
         )
     else:
         raise ValueError('model not supported: {}'.format(opt.model))
@@ -213,7 +216,7 @@ def set_model(opt):
             if opt.model == 'resnet50':
                 model.encoder = torch.nn.DataParallel(model.encoder)
             elif opt.model == 'CLOCSNET':
-                model.encoder = torch.nn.DataParallel(model.view_linear_modules)
+                model = torch.nn.DataParallel(model)
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
         model = model.cuda()
@@ -235,8 +238,9 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
-        #images = torch.cat([images[0], images[1]], dim=0)
-        images = torch.cat([images, images], dim=0)
+        images = torch.cat([images[0], images[1]], dim=0)
+        #images = torch.cat([images, images], dim=0)
+        images = images.float()
         if torch.cuda.is_available():
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
@@ -299,6 +303,7 @@ def main():
 
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    writer = SummaryWriter(comment='contrastive')
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -313,6 +318,9 @@ def main():
         # tensorboard logger
         logger.log_value('loss', loss, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+        writer.add_graph(model, input_to_model=None, verbose=False)
+        writer.add_scalar('train_loss', loss, epoch)
+        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         if epoch % opt.save_freq == 0:
             save_file = os.path.join(

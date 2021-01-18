@@ -28,6 +28,33 @@ s = 3  # stride #3
 
 # num_classes = 3
 
+class ecg_encoder(nn.Module):
+    def __init__(self, dropout1, dropout2, dropout3):
+        super(ecg_encoder, self).__init__()
+        self.encoder = nn.ModuleList()
+        self.encoder.append(nn.Sequential(
+            nn.Conv1d(c1, c2, k, s),
+            nn.BatchNorm1d(c2),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            dropout1,
+            nn.Conv1d(c2, c3, k, s),
+            nn.BatchNorm1d(c3),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            dropout2,
+            nn.Conv1d(c3, c4, k, s),
+            nn.BatchNorm1d(c4),
+            nn.ReLU(),
+            nn.MaxPool1d(2),
+            dropout3,
+            nn.Flatten()
+        ))
+
+    def forward(self, x):
+        return self.encoder(x)
+
+
 class cnn_network_contrastive(nn.Module):
     """ CNN for Self-Supervision """
 
@@ -51,8 +78,15 @@ class cnn_network_contrastive(nn.Module):
         self.trial = trial
         self.device = device
 
-        self.encoder = nn.ModuleList()
+        #self.encoder = nn.ModuleList()
+        self.encoder = ecg_encoder(
+            nencoders=nencoders,
+            dropout1=self.dropout1,
+            dropout2=self.dropout2,
+            dropout3=self.dropout3
+        )
         self.view_linear_modules = nn.ModuleList()
+        '''
         for n in range(nencoders):
             self.encoder.append(nn.Sequential(
                 nn.Conv1d(c1, c2, k, s),
@@ -70,9 +104,10 @@ class cnn_network_contrastive(nn.Module):
                 nn.ReLU(),
                 nn.MaxPool1d(2),
                 self.dropout3,
-                #nn.Flatten()
+                nn.Flatten()
             ))
-            self.view_linear_modules.append(nn.Linear(c4 * 10, self.embedding_dim))
+        '''
+        self.view_linear_modules.append(nn.Linear(c4 * 10, self.embedding_dim))
 
     def forward(self, x):
         """ Forward Pass on Batch of Inputs
@@ -90,14 +125,18 @@ class cnn_network_contrastive(nn.Module):
             h = x[:, :, :, n]
 
             if self.trial == 'CMC':
-                h = self.encoder[n](h)  # nencoders = nviews
+                #h = self.encoder[n](h)  # nencoders = nviews
                 # 因为前面加了nn.Flatten, 所以下面不需要了
-                h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+                #h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+
+                h = ecg_encoder.encoder[n](h)
                 h = self.view_linear_modules[n](h)
             else:
-                h = self.encoder[0](h)  # nencoder = 1 (used for all views)
+                #h = self.encoder[0](h)  # nencoder = 1 (used for all views)
                 # 因为前面加了nn.Flatten, 所以下面不需要了
-                h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+                #h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+
+                h = ecg_encoder.encoder[0](h)
                 h = self.view_linear_modules[0](h)
 
             latent_embeddings[:, :, n] = h

@@ -212,14 +212,3 @@ class LinearClassifier(nn.Module):
     def forward(self, features):
         return self.fc(features)
 
-
-class SupCEResECGNet(nn.Module):
-    """encoder + classifier"""
-    def __init__(self, name='resnet50_ecg', num_classes=4):
-        super(SupCEResECGNet, self).__init__()
-        model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
-        self.fc = nn.Linear(dim_in, num_classes)
-
-    def forward(self, x):
-        return self.fc(self.encoder(x))

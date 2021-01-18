@@ -4,9 +4,11 @@ import sys
 import argparse
 import time
 import math
+import os
 
 import torch
 import torch.backends.cudnn as cudnn
+from tensorboardX import SummaryWriter
 
 #from main_ce import set_loader
 from main_ce_ecg import set_loader
@@ -22,6 +24,9 @@ try:
 except ImportError:
     pass
 
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -105,29 +110,42 @@ def parse_option():
 
 
 def set_model(opt):
-    #model = SupConResNet(name=opt.model)
-    model = cnn_network_contrastive(
-        dropout_type='drop1d',
-        p1=0.2,
-        p2=0.2,
-        p3=0.2,
-        embedding_dim=128,
-        device=(torch.device('cuda'))
-    )
+    if opt.model == 'resnet50':
+        model = SupConResNet(name='resnet50_ecg')
+    elif opt.model == 'CLOCSNET':
+        model = cnn_network_contrastive(
+            dropout_type='drop1d',
+            p1=0.1,
+            p2=0.1,
+            p3=0.1,
+            embedding_dim=128,
+            device=(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+        )
+    else:
+        raise ValueError('model not supported: {}'.format(opt.model))
     criterion = torch.nn.CrossEntropyLoss()
 
-    #classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
-    classifier = linear_classifier(
-        feat_dim=128,
-        num_classes=opt.n_cls
-    )
+    if opt.model == 'resnet50':
+        classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
+    elif opt.model == 'CLOCSNET':
+        classifier = linear_classifier(
+            feat_dim=128,  # c4*10
+            num_classes=opt.n_cls
+        )
+    else:
+        raise ValueError('model not supported: {}'.format(opt.model))
 
     ckpt = torch.load(opt.ckpt, map_location='cpu')
     state_dict = ckpt['model']
 
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
-            model.encoder = torch.nn.DataParallel(model.view_linear_modules)
+            if opt.model == 'resnet50':
+                model.encoder = torch.nn.DataParallel(model.encoder)
+            elif opt.model == 'CLOCSNET':
+                model = torch.nn.DataParallel(model)
+            else:
+                raise ValueError('model not supported: {}'.format(opt.model))
         else:
             new_state_dict = {}
             for k, v in state_dict.items():
@@ -168,7 +186,12 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
         # compute loss
         with torch.no_grad():
             #features = model.encoder(images)
-            features = model(images)
+            if opt.model == 'resnet50':
+                features = model.encoder(images)
+            elif opt.model == 'CLOCSNET':
+                features = model(images)
+            else:
+                raise ValueError('model not supported: {}'.format(opt.model))
         output = classifier(features.detach())
         loss = criterion(output, labels)
 
@@ -229,8 +252,12 @@ def validate(val_loader, model, classifier, criterion, opt):
             bsz = labels.shape[0]
 
             # forward
-            #output = classifier(model.encoder(images))
-            output = classifier(model(images))
+            if opt.model == 'resnet50':
+                output = classifier(model.encoder(images))
+            elif opt.model == 'CLOCSNET':
+                output = classifier(model(images))
+            else:
+                raise ValueError('model not supported: {}'.format(opt.model))
             loss = criterion(output, labels)
 
             # update metric
@@ -287,6 +314,9 @@ def main():
     # build optimizer
     optimizer = set_optimizer(opt, classifier)
 
+    # build tensorboardX
+    writer = SummaryWriter(comment='linear')
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
@@ -299,8 +329,19 @@ def main():
         print('Train epoch {}, total time {:.2f}, accuracy:{:.2f}, auc:{:.2f}'.format(
             epoch, time2 - time1, acc, auc))
 
+        writer.add_graph(model, input_to_model=None, verbose=False)
+        writer.add_graph(classifier, input_to_model=None, verbose=False)
+        writer.add_scalar('train_loss', loss, epoch)
+        writer.add_scalar('train_acc', acc, epoch)
+        writer.add_scalar('train_auc', auc, epoch)
+        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+
         # eval for one epoch
         loss, val_acc, val_auc, val_precision, val_recall, val_f1 = validate(val_loader, model, classifier, criterion, opt)
+        writer.add_scalar('val_loss', loss, epoch)
+        writer.add_scalar('val_acc', val_acc, epoch)
+        writer.add_scalar('val_auc', val_auc, epoch)
+
 
         metrics = dict()
         if loss < best_loss:
