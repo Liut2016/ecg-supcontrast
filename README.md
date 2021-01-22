@@ -1,3 +1,24 @@
+### 运行指南
+1. 在process/load_chapman_ecg.py中修改数据存放地址，生成实验所需的数据，存放在/data
+2. 运行实验
+    - supervise
+      ```bash
+        python main_ce_ecg.py --batch_size 1024 --learning_rate 0.1 --dataset chapman --model CLOCSNET
+      ```
+    - pretrain+linear
+        ```bash
+        # pretrain
+        python main_supcon_ecg.py --batch_size 1024 --learning_rate 0.1  --temp 0.1  --cosine --dataset chapman --model CLOCSNET --method CMSC
+        # linear
+        python main_linear_ecg.py --dataset chapman --batch_size 512 --learning_rate 5 --model CLOCSNET --method CMSC --ckpt ./save/SupCon/chapman_models/CMSC_chapman_CLOCSNET_lr_0.1_decay_0.0001_bsz_1024_temp_0.1_trial_0_cosine_warm/last.pth
+        ```
+### 注意事项
+1. model可选CLOCSNET和resnet50，但resnet50运行较慢；
+2. CLOCSNET与SimCLR论文中提到的架构不同，表现在CLOCSNET将经过projection网络后的输出作为特征；
+3. CMSC-P运行很慢，瓶颈在loss计算中的矩阵运算上。
+
+
+
 # SupContrast: Supervised Contrastive Learning
 <p align="center">
   <img src="figures/teaser.png" width="700">

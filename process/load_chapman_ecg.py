@@ -15,18 +15,20 @@ from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 
 # 处理chapman数据集
+# 每个心电图数据为 12*5000， 选取其中4个导联按照任务进行重采样，即4*2500（或4*5000）
+# 再堆叠起来，总条数为n*4， 故格式为（n*4,2500）
 # 数据部分frame_dict格式为：
 # {
 #   'ecg':{
 #       1:{
 #           'test':{
-#               'All Terms':[[[]]]  尺寸：(17032,2500)
+#               'All Terms':[[[]]]  尺寸：(8512,2500)
 #           },
 #           'train':{
 #               'All Terms':[[[]]]  尺寸：(25543,2500)
 #           },
 #           'val':{
-#               'All Terms':[[[]]]  尺寸：(2129,4,2500)
+#               'All Terms':[[[]]]  尺寸：(8520,2500)
 #           }
 #       }
 #   }
@@ -37,13 +39,13 @@ from tqdm import tqdm
 #   'ecg':{
 #       1:{
 #           'test':{
-#               'All Terms':[[]]    尺寸：17032
+#               'All Terms':[[]]    尺寸：8512
 #           },
 #           'train':{
 #               'All Terms':[[]]    尺寸：25543
 #          },
 #           'val':{
-#               'All Terms':[[]]    尺寸：(2129,4)
+#               'All Terms':[[]]    尺寸：8520
 #          },
 #       }
 #   }
@@ -59,9 +61,9 @@ enc = LabelEncoder()
 dataset = 'chapman'
 # 改成原始数据地址
 #basepath = '../data/raw_data/Chapman'
-basepath = '/home/liutao/ecg-data/Chapman'
+basepath = '/data/liutao/Chapman'
 
-trial = 'contrastive_ss'  # '' | 'contrastive_ms' | 'contrastive_ml' | 'contrastive_msml' | 'contrastive_ss'
+trial = 'contrastive_ms'  # '' | 'contrastive_ms' | 'contrastive_ml' | 'contrastive_msml' | 'contrastive_ss'
 
 files = os.listdir(os.path.join(basepath, 'ECGDataDenoised'))
 database = pd.read_excel(os.path.join(basepath, 'Diagnostics.xlsx'))

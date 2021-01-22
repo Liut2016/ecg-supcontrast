@@ -18,9 +18,9 @@ from util import set_optimizer, save_model
 from util import EarlyStopping
 from networks.resnet_big import SupConResNet
 from networks.CLOCSNET import cnn_network_contrastive
-from losses import SupConLoss
+from losses import SupConLoss, obtain_contrastive_loss
 from datasets import Chapman
-from transforms_ecg import AddGaussianNoise
+from transforms_ecg import AddGaussianNoise, RandSampling, Permutation, Rotation, GenerateRandomCurves, dataReshape
 
 try:
     import apex
@@ -42,7 +42,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=1000,
+    parser.add_argument('--epochs', type=int, default=100,
                         help='number of training epochs')
 
     # optimization
@@ -68,7 +68,7 @@ def parse_option():
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
@@ -159,9 +159,15 @@ def set_loader(opt):
         #    transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
         #], p=0.8),
         #transforms.RandomGrayscale(p=0.2),
-        AddGaussianNoise(),
+        #AddGaussianNoise(),
         #transforms.ToTensor(),
         #normalize,
+
+        dataReshape(3),
+        RandSampling(),
+        Permutation(),
+        #Rotation(),
+        dataReshape(4)
     ])
 
     if opt.dataset == 'cifar10':
@@ -176,9 +182,13 @@ def set_loader(opt):
         train_dataset = datasets.ImageFolder(root=opt.data_folder,
                                             transform=TwoCropTransform(train_transform))
     elif opt.dataset == 'chapman':
+        if opt.method in ['CMSC-P']:
+            trans = None
+        else:
+            trans = TwoCropTransform(transform=train_transform, method=opt.method)
         train_dataset = Chapman(
             opt=opt,
-            transform=TwoCropTransform(train_transform)
+            transform=trans
         )
     else:
         raise ValueError(opt.dataset)
@@ -235,10 +245,13 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     losses = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (images, labels, pids) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
-        images = torch.cat([images[0], images[1]], dim=0)
+        if opt.method == 'CMSC-P':
+            images = images.reshape(-1, 1, 2500, 2)
+        else:
+            images = torch.cat([images[0], images[1]], dim=0)
         #images = torch.cat([images, images], dim=0)
         images = images.float()
         if torch.cuda.is_available():
@@ -250,16 +263,21 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
         # compute loss
-        features = model(images)   # [bsz*2, 1, 2500, nviews]
-        f1, f2 = torch.split(features, [bsz, bsz], dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
-        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [bsz, 2, embedding_dim, nviews]
-        if opt.model == 'CLOCSNET':
-            features = features.squeeze(3)
+        features = model(images)  # [bsz*2, 1, 2500, nviews]
+        if opt.method == 'CMSC-P':
+            pass
+        else:
+            f1, f2 = torch.split(features, [bsz, bsz], dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [bsz, 2, embedding_dim, nviews]
+            if opt.model == 'CLOCSNET':
+                features = features.squeeze(3)
 
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
-        elif opt.method == 'SimCLR':
+        elif opt.method in ['SimCLR', 'CMSC']:
             loss = criterion(features)
+        elif opt.method in ['CMSC-P']:
+            loss = obtain_contrastive_loss(features, pids, 'CMSC')
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
@@ -318,7 +336,7 @@ def main():
         # tensorboard logger
         logger.log_value('loss', loss, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
-        writer.add_graph(model, input_to_model=None, verbose=False)
+        #writer.add_graph(model, input_to_model=None, verbose=False)
         writer.add_scalar('train_loss', loss, epoch)
         writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
@@ -340,7 +358,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last.pth')
+        opt.save_folder, 'last-0121.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 

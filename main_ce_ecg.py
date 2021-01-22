@@ -233,7 +233,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     top1 = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (images, labels, pids) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         #print(images.shape, labels.shape)
@@ -303,7 +303,7 @@ def validate(val_loader, model, criterion, opt):
 
     with torch.no_grad():
         end = time.time()
-        for idx, (images, labels) in enumerate(val_loader):
+        for idx, (images, labels, pids) in enumerate(val_loader):
             images = images.float().cuda()
             labels = labels.cuda()
             bsz = labels.shape[0]
@@ -384,7 +384,7 @@ def main():
         logger.log_value('train_recall', recall, epoch)
         logger.log_value('train_f1', f1, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
-        writer.add_graph(model, input_to_model=None, verbose=False)
+        #writer.add_graph(model, input_to_model=None, verbose=False)
         writer.add_scalar('train_loss', loss, epoch)
         writer.add_scalar('train_acc', train_acc, epoch)
         writer.add_scalar('train_auc', auc, epoch)

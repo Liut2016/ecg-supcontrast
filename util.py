@@ -13,11 +13,18 @@ warnings.filterwarnings('once')
 
 class TwoCropTransform:
     """Create two crops of the same image"""
-    def __init__(self, transform):
+    def __init__(self, transform, method=''):
         self.transform = transform
+        self.method = method
 
     def __call__(self, x):
-        return [self.transform(x), self.transform(x)]
+        if self.method == 'CMSC':
+            length = x.shape[1] // 2
+            r1, r2 = torch.split(x, [length, length], dim=1)
+            res = [self.transform(r1), self.transform(r2)]
+        else:
+            res = [self.transform(x), self.transform(x)]
+        return res
 
 
 class AverageMeter(object):

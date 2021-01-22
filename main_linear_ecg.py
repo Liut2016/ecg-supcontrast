@@ -59,6 +59,10 @@ def parse_option():
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100', 'chapman'], help='dataset')
 
+    # method
+    parser.add_argument('--method', type=str, default='SupCon',
+                        choices=['SupCon', 'SimCLR', 'CMSC'], help='choose method')
+
     # other setting
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')
@@ -129,7 +133,7 @@ def set_model(opt):
         classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
     elif opt.model == 'CLOCSNET':
         classifier = linear_classifier(
-            feat_dim=128,  # c4*10
+            feat_dim=128,
             num_classes=opt.n_cls
         )
     else:
@@ -173,13 +177,21 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
     top1 = AverageMeter()
 
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+    for idx, (images, labels, pids) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         images = images.cuda(non_blocking=True)
         labels = labels.cuda(non_blocking=True)
         bsz = labels.shape[0]
 
+        # 如果使用CMSC，需要把5000的数据截成前后各2500的两段
+        if opt.method == 'CMSC':
+            length = images.shape[2] // 2
+            images = torch.split(images, [length, length], dim=2)
+            images = torch.cat([images[0], images[1]], dim=0)
+            labels = torch.cat([labels, labels], dim=0)
+        elif opt.method == 'CMSC-P':
+            images = images.reshape(-1, 1, 2500, 2)
         # warm-up learning rate
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
@@ -246,10 +258,18 @@ def validate(val_loader, model, classifier, criterion, opt):
 
     with torch.no_grad():
         end = time.time()
-        for idx, (images, labels) in enumerate(val_loader):
+        for idx, (images, labels, pids) in enumerate(val_loader):
             images = images.float().cuda()
             labels = labels.cuda()
             bsz = labels.shape[0]
+
+            if opt.method == 'CMSC':
+                length = images.shape[2] // 2
+                images = torch.split(images, [length, length], dim=2)
+                images = torch.cat([images[0], images[1]], dim=0)
+                labels = torch.cat([labels, labels], dim=0)
+            elif opt.method == 'CMSC-P':
+                images = images.reshape(-1, 1, 2500, 2)
 
             # forward
             if opt.model == 'resnet50':
@@ -329,8 +349,8 @@ def main():
         print('Train epoch {}, total time {:.2f}, accuracy:{:.2f}, auc:{:.2f}'.format(
             epoch, time2 - time1, acc, auc))
 
-        writer.add_graph(model, input_to_model=None, verbose=False)
-        writer.add_graph(classifier, input_to_model=None, verbose=False)
+        #writer.add_graph(model, input_to_model=None, verbose=False)
+        #writer.add_graph(classifier, input_to_model=None, verbose=False)
         writer.add_scalar('train_loss', loss, epoch)
         writer.add_scalar('train_acc', acc, epoch)
         writer.add_scalar('train_auc', auc, epoch)

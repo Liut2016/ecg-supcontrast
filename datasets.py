@@ -6,19 +6,9 @@ import os
 import pickle
 import numpy as np
 import torch
+import argparse
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '1'
-
-def normalization1(array):
-    maxcols=array.max(axis=1)
-    mincols=array.min(axis=1)
-    data_shape = array.shape
-    data_rows = data_shape[0]
-    data_cols = data_shape[1]
-    t=np.empty((data_rows,data_cols))
-    for i in range(data_cols):
-        t[:,i]=(array[:,i]-mincols[i])/(maxcols[i]-mincols[i])
-    return t
 
 def normalization(data, label):
 
@@ -55,19 +45,28 @@ class Chapman(Dataset):
                  train=True,
                  transform=None,
                  target_transform=None):
+
+        if opt.method in ['CMSC', 'CMSC-P']:
+            path = './data/chapman_ecg/contrastive_ms/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
+
         with open(os.path.join(path, 'frames_phases_chapman.pkl'), 'rb') as f:
             data = pickle.load(f)
             data = data['ecg'][1]
         with open(os.path.join(path, 'labels_phases_chapman.pkl'), 'rb') as f:
             label = pickle.load(f)
             label = label['ecg'][1]
+        with open(os.path.join(path, 'pid_phases_chapman.pkl'), 'rb') as f:
+            pid = pickle.load(f)
+            pid = pid['ecg'][1]
 
         if train:
             data = np.concatenate((data['train']['All Terms'], data['val']['All Terms']), axis=0)
             label = np.concatenate((label['train']['All Terms'], label['val']['All Terms']), axis=0)
+            pid = np.concatenate((pid['train']['All Terms'], pid['val']['All Terms']), axis=0)
         else:
             data = data['test']['All Terms']
             label = label['test']['All Terms']
+            pid = pid['test']['All Terms']
 
         # 归一化
         data, label = normalization(data, label)
@@ -84,13 +83,18 @@ class Chapman(Dataset):
             data = data.permute((0, 2, 1))
         elif opt.model == 'CLOCSNET':
             # for CLOCSNET
-            data = data.reshape(-1, 1, 2500)
+            if opt.method in ['CMSC', 'CMSC-P']:
+                len = 5000
+            else:
+                len = 2500
+            data = data.reshape(-1, 1, len)
             data = data.unsqueeze(3)
         else:
             raise ValueError('model not supported: {}'.format(opt.model))
 
         self.data = data
         self.label = label
+        self.pid = pid
         self.transform = transform
         self.target_transform = target_transform
 
@@ -99,7 +103,7 @@ class Chapman(Dataset):
         pass
 
     def __getitem__(self, index):
-        data, label = self.data[index], self.label[index]
+        data, label, pid = self.data[index], self.label[index], self.pid[index]
         
         if self.transform is not None:
             data = self.transform(data)
@@ -107,21 +111,27 @@ class Chapman(Dataset):
         if self.target_transform is not None:
             label = self.target_transform(label)
 
-        return data, label
+        return data, label, pid
 
     def __len__(self):
         return len(self.data)
 
 if __name__ == '__main__':
-    dataset = Chapman()
+    parser = argparse.ArgumentParser('argument for training')
+    parser.add_argument('--model', type=str, default='CLOCSNET')
+    parser.add_argument('--method', type=str, default='CMSC',
+                        choices=['SupCon', 'SimCLR', 'CMSC'], help='choose method')
+    opt = parser.parse_args()
+    dataset = Chapman(opt=opt)
 
     train_loader = torch.utils.data.DataLoader(
         dataset, batch_size=1024, shuffle=True,
         num_workers=16, pin_memory=True, sampler=None)
-    for i, (data, label) in enumerate(train_loader):
+    for i, (data, label, pid) in enumerate(train_loader):
         print(i)
         print(data.shape)
         print(label.shape)
+        print(len(pid))
         break
 
     print('success')
