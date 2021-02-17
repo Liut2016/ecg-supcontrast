@@ -42,7 +42,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=100,
+    parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
 
     # optimization
@@ -163,11 +163,11 @@ def set_loader(opt):
         #transforms.ToTensor(),
         #normalize,
 
-        dataReshape(3),
-        RandSampling(),
-        Permutation(),
+        #dataReshape(3),
+        #RandSampling(),
+        #Permutation(),
         #Rotation(),
-        dataReshape(4)
+        #dataReshape(4)
     ])
 
     if opt.dataset == 'cifar10':
@@ -263,7 +263,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
         # compute loss
-        features = model(images)  # [bsz*2, 1, 2500, nviews]
+        _, features = model(images)  # [bsz*2, 1, 2500, nviews]
         if opt.method == 'CMSC-P':
             pass
         else:
@@ -358,7 +358,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last-0121.pth')
+        opt.save_folder, 'last-0217-1.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 

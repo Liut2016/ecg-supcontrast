@@ -84,11 +84,12 @@ class cnn_network_contrastive(nn.Module):
         batch_size = x.shape[0]
         # nsamples = x.shape[2]
         nviews = x.shape[3]
-        latent_embeddings = torch.empty(batch_size, self.embedding_dim, nviews, device=self.device)
+        latent_embeddings = torch.empty(batch_size, c4 * 10, nviews, device=self.device)
+        proj_embeddings = torch.empty(batch_size, self.embedding_dim, nviews, device=self.device)
         for n in range(nviews):
             """ Obtain Inputs From Each View """
             h = x[:, :, :, n]
-
+            temp = h
             if self.trial == 'CMC':
                 h = self.encoder[n](h)  # nencoders = nviews
                 # 因为前面加了nn.Flatten, 所以下面不需要了
@@ -98,12 +99,16 @@ class cnn_network_contrastive(nn.Module):
                 h = self.encoder[0](h)  # nencoder = 1 (used for all views)
                 # 因为前面加了nn.Flatten, 所以下面不需要了
                 h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+                temp = h
                 h = self.view_linear_modules[0](h)
 
-            latent_embeddings[:, :, n] = h
+            latent_embeddings[:, :, n] = temp
             latent_embeddings = F.normalize(latent_embeddings, dim=1)
 
-        return latent_embeddings
+            proj_embeddings[:, :, n] = h
+            proj_embeddings = F.normalize(proj_embeddings, dim=1)
+
+        return latent_embeddings, proj_embeddings
 
 
 class second_cnn_network(nn.Module):
@@ -114,14 +119,14 @@ class second_cnn_network(nn.Module):
         self.linear = nn.Linear(embedding_dim, noutputs)
 
     def forward(self, x):
-        h = self.first_model(x)
+        _, h = self.first_model(x)
         h = h.squeeze()  # to get rid of final dimension from torch.empty before
         output = self.linear(h)
         return output
 
 class linear_classifier(nn.Module):
     """Linear classifier"""
-    def __init__(self, feat_dim=128, num_classes=4):
+    def __init__(self, feat_dim=c4 * 10, num_classes=4):
         super(linear_classifier, self).__init__()
         self.fc = nn.Linear(feat_dim, num_classes)
 

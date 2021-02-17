@@ -48,6 +48,8 @@ class Chapman(Dataset):
 
         if opt.method in ['CMSC', 'CMSC-P']:
             path = './data/chapman_ecg/contrastive_ms/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
+        else:
+            pass
 
         with open(os.path.join(path, 'frames_phases_chapman.pkl'), 'rb') as f:
             data = pickle.load(f)
@@ -89,6 +91,8 @@ class Chapman(Dataset):
                 len = 2500
             data = data.reshape(-1, 1, len)
             data = data.unsqueeze(3)
+            #data = data.reshape(-1, 1, 1, len)
+            #data = data.permute((0, 1, 3, 2))
         else:
             raise ValueError('model not supported: {}'.format(opt.model))
 

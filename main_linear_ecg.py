@@ -133,7 +133,7 @@ def set_model(opt):
         classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
     elif opt.model == 'CLOCSNET':
         classifier = linear_classifier(
-            feat_dim=128,
+            feat_dim=320, # 128
             num_classes=opt.n_cls
         )
     else:
@@ -201,7 +201,8 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
             if opt.model == 'resnet50':
                 features = model.encoder(images)
             elif opt.model == 'CLOCSNET':
-                features = model(images)
+                features, _ = model(images)
+                #_, features = model(images)
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
         output = classifier(features.detach())
@@ -234,7 +235,7 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'loss {loss.val:.3f} ({loss.avg:.3f})\t'
                   'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                  'Auc {auc:.3f}'
+                  'Auc {auc:.3f}\t'
                   'precision {precision:.3f}\t'
                   'recall {recall:.3f}\t'
                   'f1 {f1:.3f}'.format(
@@ -275,7 +276,7 @@ def validate(val_loader, model, classifier, criterion, opt):
             if opt.model == 'resnet50':
                 output = classifier(model.encoder(images))
             elif opt.model == 'CLOCSNET':
-                output = classifier(model(images))
+                output = classifier(model(images)[0])
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
             loss = criterion(output, labels)
@@ -302,7 +303,7 @@ def validate(val_loader, model, classifier, criterion, opt):
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                       'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Auc {auc:.3f}'
+                      'Auc {auc:.3f}\t'
                       'precision {precision:.3f}\t'
                       'recall {recall:.3f}\t'
                       'f1 {f1:.3f}'.format(

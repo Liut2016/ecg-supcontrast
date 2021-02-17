@@ -98,9 +98,9 @@ def calculate_other_metrics(output, target, average='macro'):
     if torch.is_tensor(target):
         target = target.detach().cpu().numpy()
     pred = [c.argmax() for c in output]
-    precision = precision_score(target, pred, average=average)
-    recall = recall_score(target, pred, average=average)
-    f1 = f1_score(target, pred, average=average)
+    precision = precision_score(target, pred, average=average, labels=np.unique(pred))
+    recall = recall_score(target, pred, average=average, labels=np.unique(pred))
+    f1 = f1_score(target, pred, average=average, labels=np.unique(pred))
     return precision, recall, f1
 
 

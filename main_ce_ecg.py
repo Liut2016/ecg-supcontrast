@@ -65,6 +65,11 @@ def parse_option():
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100', 'chapman'], help='dataset')
 
+    # method
+    parser.add_argument('--method', type=str, default='CE',
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P', 'CE'], help='choose method')
+
+
     # other setting
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')
@@ -332,7 +337,7 @@ def validate(val_loader, model, criterion, opt):
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                       'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Auc {auc:.3f}'
+                      'Auc {auc:.3f}\t'
                       'precision {precision:.3f}\t'
                       'recall {recall:.3f}\t'
                       'f1 {f1:.3f}'.format(
