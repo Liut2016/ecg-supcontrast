@@ -7,6 +7,7 @@ import pickle
 import numpy as np
 import torch
 import argparse
+from util import plot_ecg
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
@@ -41,13 +42,15 @@ def normalization(data, label):
 # chapman
 class Chapman(Dataset):
     def __init__(self, opt,
-                 path='./data/chapman_ecg/contrastive_ss/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']',
+                 #path='./data/chapman_ecg/contrastive_ss/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']',
+                 path='./data/chapman_ecg/contrastive_ss/leads_[\'II\']',
                  train=True,
                  transform=None,
                  target_transform=None):
 
         if opt.method in ['CMSC', 'CMSC-P']:
-            path = './data/chapman_ecg/contrastive_ms/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
+            #path = './data/chapman_ecg/contrastive_ms/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
+            path = './data/chapman_ecg/contrastive_ms/leads_[\'II\']'
         else:
             pass
 
@@ -91,8 +94,15 @@ class Chapman(Dataset):
                 len = 2500
             data = data.reshape(-1, 1, len)
             data = data.unsqueeze(3)
-            #data = data.reshape(-1, 1, 1, len)
-            #data = data.permute((0, 1, 3, 2))
+            #data = data.reshape(-1, 1, len, 1)
+            #data = data.reshape(-1, 1, 2500, 2)
+            #temp = data[:, :, :, 0]
+        elif opt.model == 'TCN':
+            if opt.method in ['CMSC', 'CMSC-P']:
+                len = 5000
+            else:
+                len = 2500
+            data = data.reshape(-1, 1, len)
         else:
             raise ValueError('model not supported: {}'.format(opt.model))
 
@@ -123,19 +133,21 @@ class Chapman(Dataset):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('argument for training')
     parser.add_argument('--model', type=str, default='CLOCSNET')
-    parser.add_argument('--method', type=str, default='CMSC',
+    parser.add_argument('--method', type=str, default='SimCLR',
                         choices=['SupCon', 'SimCLR', 'CMSC'], help='choose method')
     opt = parser.parse_args()
     dataset = Chapman(opt=opt)
 
     train_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=1024, shuffle=True,
+        dataset, batch_size=1, shuffle=False,
         num_workers=16, pin_memory=True, sampler=None)
     for i, (data, label, pid) in enumerate(train_loader):
         print(i)
         print(data.shape)
         print(label.shape)
         print(len(pid))
-        break
+        plot_ecg(data[0], sample_rate=250)
+        print('----------')
+        #break
 
     print('success')

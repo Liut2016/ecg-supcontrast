@@ -11,16 +11,20 @@ from tensorboardX import SummaryWriter
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
+import numpy as np
 
-from util import TwoCropTransform, AverageMeter
+from util import TwoCropTransform, AverageMeter, NCropTransform
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from util import EarlyStopping
 from networks.resnet_big import SupConResNet
 from networks.CLOCSNET import cnn_network_contrastive
+from networks.TCN import TCN
 from losses import SupConLoss, obtain_contrastive_loss
 from datasets import Chapman
-from transforms_ecg import AddGaussianNoise, RandSampling, Permutation, Rotation, GenerateRandomCurves, dataReshape
+from transforms_ecg import AddGaussianNoise, GenerateRandomCurves
+from transforms_ecg import dataReshape, Jitter, Scaling, MagWarp, TimeWarp, Rotation, Permutation, RandSampling
+from transforms_ecg import GenerateRandomCurvesClass, DistortTimestepsClass, RandSampleTimestepsClass, WTfilt_1d_Class
 
 try:
     import apex
@@ -163,11 +167,19 @@ def set_loader(opt):
         #transforms.ToTensor(),
         #normalize,
 
-        #dataReshape(3),
-        #RandSampling(),
-        #Permutation(),
-        #Rotation(),
-        #dataReshape(4)
+        dataReshape(3),
+        #GenerateRandomCurvesClass(),
+        #DistortTimestepsClass(),
+        #RandSampleTimestepsClass(),
+        #WTfilt_1d_Class(),
+        #Jitter(),
+        #RandSampling(nSample=2500),
+        #Scaling(),
+        #MagWarp(),
+        TimeWarp(),
+        #Permutation(nPerm=10),
+        #Rotation(), # 有错误
+        dataReshape(4)
     ])
 
     if opt.dataset == 'cifar10':
@@ -182,10 +194,13 @@ def set_loader(opt):
         train_dataset = datasets.ImageFolder(root=opt.data_folder,
                                             transform=TwoCropTransform(train_transform))
     elif opt.dataset == 'chapman':
+        '''
         if opt.method in ['CMSC-P']:
             trans = None
         else:
             trans = TwoCropTransform(transform=train_transform, method=opt.method)
+        '''
+        trans = NCropTransform(transform=train_transform, method=opt.method, nviews=2)
         train_dataset = Chapman(
             opt=opt,
             transform=trans
@@ -213,6 +228,13 @@ def set_model(opt):
             embedding_dim=128,
             device=(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
         )
+    elif opt.model == 'TCN':
+        model = TCN(
+            num_channels=[32, 32, 32, 32],
+            embedding_dim=128,
+            kernel_size=7,
+            dropout=0.2
+        )
     else:
         raise ValueError('model not supported: {}'.format(opt.model))
     criterion = SupConLoss(temperature=opt.temp)
@@ -225,7 +247,7 @@ def set_model(opt):
         if torch.cuda.device_count() > 1:
             if opt.model == 'resnet50':
                 model.encoder = torch.nn.DataParallel(model.encoder)
-            elif opt.model == 'CLOCSNET':
+            elif opt.model in ['CLOCSNET', 'TCN']:
                 model = torch.nn.DataParallel(model)
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
@@ -248,10 +270,15 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     for idx, (images, labels, pids) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
+        # 在transform中加入了NCrop，可以将数据裁成nviews段，这里需要将各段拼合起来 [bsz*nviews, 1, len]
+        # 但是CMSC-P特殊，因为CLOCS中计算loss需要[bsz, embedding_dim, nviews]
         if opt.method == 'CMSC-P':
-            images = images.reshape(-1, 1, 2500, 2)
+            #images = images.reshape(-1, 1, 2500, 2)
+            images = torch.cat(images, dim=3)
         else:
-            images = torch.cat([images[0], images[1]], dim=0)
+            #images = torch.cat([images[0], images[1]], dim=0)
+            images = torch.cat(images, dim=0)
+
         #images = torch.cat([images, images], dim=0)
         images = images.float()
         if torch.cuda.is_available():
@@ -262,11 +289,22 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         # warm-up learning rate
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
+        '''
+        temp = images.detach().cpu().numpy()
+        if np.isnan(temp).any():
+            print('alert!', temp)
+        '''
+
         # compute loss
+        # TODO:待完善
         _, features = model(images)  # [bsz*2, 1, 2500, nviews]
+        #features = model(images)  # [bsz*2, 1, 2500, nviews]
+
+        # TODO：待完善
         if opt.method == 'CMSC-P':
             pass
         else:
+            # 这里没有对 nviews ！= 2 的情况做处理， 也没有对非CLOCSNET情况做处理
             f1, f2 = torch.split(features, [bsz, bsz], dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
             features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [bsz, 2, embedding_dim, nviews]
             if opt.model == 'CLOCSNET':
@@ -323,6 +361,12 @@ def main():
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
     writer = SummaryWriter(comment='contrastive')
 
+    # early_stopping
+    patience = 20
+    path = os.path.join(
+        opt.save_folder, 'earlystop.pth')
+    early_stopping = EarlyStopping(patience=patience, verbose=True, path=path)
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
@@ -345,9 +389,7 @@ def main():
                 opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
             save_model(model, optimizer, opt, epoch, save_file)
 
-        # early_stopping
-        patience = 20
-        early_stopping = EarlyStopping(patience=patience, verbose=True)
+
         early_stopping(loss, model)
         if early_stopping.early_stop:
             print('Early stopping')
@@ -358,7 +400,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last-0217-1.pth')
+        opt.save_folder, 'last-0228-supcontimewarp.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 

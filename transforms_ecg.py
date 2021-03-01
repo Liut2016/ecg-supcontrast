@@ -55,6 +55,16 @@ def GenerateRandomCurves(X, sigma=0.2, knot=4):
 
     return np.array([cs_i(x_range) for cs_i in cs])
 
+class GenerateRandomCurvesClass(object):
+    def __init__(self, sigma=0.2, knot=4):
+        self.sigma = sigma
+        self.knot = knot
+
+    def __call__(self, tensor):
+        res = GenerateRandomCurves(tensor, self.sigma, self.knot)
+        res = torch.from_numpy(res)
+        return res
+
 def DistortTimesteps(X, sigma=0.2):
     # X: (C, L)
     # out: (C, L) np.ndarry
@@ -66,6 +76,15 @@ def DistortTimesteps(X, sigma=0.2):
         tt_cum[:,i] = tt_cum[:,i]*t_scale[i]
     return tt_cum.transpose()
 
+class DistortTimestepsClass(object):
+    def __init__(self, sigma=0.2):
+        self.sigma = sigma
+
+    def __call__(self, tensor):
+        x = DistortTimesteps(tensor, self.sigma)
+        x = torch.from_numpy(x)
+        return x
+
 def RandSampleTimesteps(X, nSample=1000):
     # X: (C, L)
     # out: (C, L) np.ndarry
@@ -75,10 +94,21 @@ def RandSampleTimesteps(X, nSample=1000):
     tt[-1,:] = X.shape[1]-1
     return tt.transpose()
 
+class RandSampleTimestepsClass(object):
+    def __init__(self, nSample=1000):
+        self.nSample = nSample
+
+    def __call__(self, tensor):
+        x = RandSampleTimesteps(tensor, self.nSample)
+        x = torch.from_numpy(x)
+        return x
+
 def WTfilt_1d(sig):
     coeffs = pywt.wavedec(data=sig, wavelet='db5', level=9)
     cA9, cD9, cD8, cD7, cD6, cD5, cD4, cD3, cD2, cD1 = coeffs
-    threshold = (np.median(np.abs(cD1)) / 0.6745) * (np.sqrt(2 * np.log(len(cD1))))
+    # 如果按照原来的写法loss会变成NaN
+    #threshold = (np.median(np.abs(cD1)) / 0.6745) * (np.sqrt(2 * np.log(len(cD1))))
+    threshold = (np.median(np.abs(cD1)) / 0.6745) * (np.sqrt(2 * np.log(len(cD1[0]))))
     # 将高频信号cD1、cD2置零
     cD1.fill(0)
     cD2.fill(0)
@@ -87,6 +117,14 @@ def WTfilt_1d(sig):
         coeffs[i] = pywt.threshold(coeffs[i], threshold)
     rdata = pywt.waverec(coeffs=coeffs, wavelet='db5')
     return rdata
+
+class WTfilt_1d_Class(object):
+    def __init__(self):
+        pass
+    def __call__(self, tensor):
+        x = WTfilt_1d(tensor)
+        x = torch.from_numpy(x)
+        return x
 
 class Jitter(object):
     """
@@ -224,13 +262,20 @@ class Rotation(object):
             Tensor: Scaled Tensor.
         """
 
-        axis = torch.Tensor(tensors.shape[0]).uniform_(-1, 1)
-        angle = torch.Tensor().uniform_(-np.pi, np.pi)
+        #axis = torch.Tensor(tensors.shape[0]).uniform_(-1, 1)
+        #angle = torch.Tensor().uniform_(-np.pi, np.pi)
 
+
+        axis = torch.Tensor(1).uniform_(-1, 1)
+        angle = torch.Tensor(1).uniform_(-np.pi, np.pi)
+
+        x = axangle2mat(axis, angle)
+        x = torch.from_numpy(x)
+        return torch.matmul(x, tensors).float()
         # print("This is Rotation")
         # print(type(torch.matmul(axangle2mat(axis, angle), tensors)))
 
-        return torch.matmul(axangle2mat(axis, angle), tensors).float()
+        #return torch.matmul(axangle2mat(axis, angle), tensors).float()
 
     def __repr__(self):
         return self.__class__.__name__

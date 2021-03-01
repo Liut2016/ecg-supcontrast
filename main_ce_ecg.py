@@ -208,7 +208,8 @@ def set_model(opt):
             p1=0.1,
             p2=0.1,
             p3=0.1,
-            device=device), noutputs=opt.n_cls)
+            embedding_dim=128,
+            device=device), embedding_dim=320, noutputs=opt.n_cls)
     else:
         raise ValueError('model not supported: {}'.format(opt.model))
 
@@ -356,6 +357,11 @@ def main():
     best_acc = 0
     best_auc = 0
     best_loss = 1e5
+    metrics = dict()
+    best_acc_acc = 0
+    best_acc_auc = 0
+    best_auc_acc = 0
+    best_auc_auc = 0
     opt = parse_option()
 
     # build data loader
@@ -370,6 +376,12 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
     writer = SummaryWriter(comment='supervised')
+
+    # early_stopping
+    patience = 20
+    path = os.path.join(
+        opt.save_folder, 'earlystop.pth')
+    early_stopping = EarlyStopping(patience=patience, verbose=True, path=path)
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -408,7 +420,7 @@ def main():
         writer.add_scalar('val_auc', val_auc, epoch)
 
 
-        metrics = dict()
+
         if loss < best_loss:
             metrics['acc'] = val_acc
             metrics['auc'] = val_auc
@@ -418,17 +430,19 @@ def main():
 
         if val_acc > best_acc:
             best_acc = val_acc
+            best_acc_acc = val_acc
+            best_acc_auc = val_auc
         if val_auc > best_auc:
             best_auc = val_auc
+            best_auc_acc = val_acc
+            best_auc_auc = val_auc
 
         if epoch % opt.save_freq == 0:
             save_file = os.path.join(
                 opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
             save_model(model, optimizer, opt, epoch, save_file)
 
-        # early_stopping
-        patience = 7
-        early_stopping = EarlyStopping(patience=patience, verbose=True)
+
         early_stopping(loss, model)
         if early_stopping.early_stop:
             print('Early stopping')
@@ -439,7 +453,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last.pth')
+        opt.save_folder, 'last-0228-ce.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 
@@ -450,6 +464,9 @@ def main():
     print('precision: {:.4f}'.format(metrics['precision']))
     print('recall: {:.4f}'.format(metrics['recall']))
     print('f1: {:.4f}'.format(metrics['f1']))
+
+    print('best_acc: acc {:.4f}, auc {:.4f}'.format(best_acc_acc, best_acc_auc))
+    print('best_auc: acc {:.4f}, auc {:.4f}'.format(best_auc_acc, best_auc_auc))
 
 if __name__ == '__main__':
     main()

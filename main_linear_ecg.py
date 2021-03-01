@@ -15,8 +15,10 @@ from main_ce_ecg import set_loader
 from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy, calculate_auc, calculate_other_metrics
 from util import set_optimizer
+from util import plot_ecg
 from networks.resnet_big import SupConResNet, LinearClassifier
 from networks.CLOCSNET import cnn_network_contrastive, linear_classifier
+from networks.TCN import TCN
 
 try:
     import apex
@@ -61,7 +63,7 @@ def parse_option():
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'CMSC'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P'], help='choose method')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -125,15 +127,22 @@ def set_model(opt):
             embedding_dim=128,
             device=(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
         )
+    elif opt.model == 'TCN':
+        model = TCN(
+            num_channels=[32, 32],
+            embedding_dim=128,
+            kernel_size=7,
+            dropout=0.2
+        )
     else:
         raise ValueError('model not supported: {}'.format(opt.model))
     criterion = torch.nn.CrossEntropyLoss()
 
     if opt.model == 'resnet50':
         classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
-    elif opt.model == 'CLOCSNET':
+    elif opt.model in ['CLOCSNET', 'TCN']:
         classifier = linear_classifier(
-            feat_dim=320, # 128
+            feat_dim=320, # 128 320
             num_classes=opt.n_cls
         )
     else:
@@ -146,7 +155,7 @@ def set_model(opt):
         if torch.cuda.device_count() > 1:
             if opt.model == 'resnet50':
                 model.encoder = torch.nn.DataParallel(model.encoder)
-            elif opt.model == 'CLOCSNET':
+            elif opt.model in ['CLOCSNET', 'TCN']:
                 model = torch.nn.DataParallel(model)
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
@@ -184,14 +193,20 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
         labels = labels.cuda(non_blocking=True)
         bsz = labels.shape[0]
 
+        #plot_ecg(images[0], sample_rate=500)
+
         # 如果使用CMSC，需要把5000的数据截成前后各2500的两段
-        if opt.method == 'CMSC':
+        # TODO:待处理
+
+        if opt.method in ['CMSC', 'CMSC-P']:
             length = images.shape[2] // 2
             images = torch.split(images, [length, length], dim=2)
             images = torch.cat([images[0], images[1]], dim=0)
             labels = torch.cat([labels, labels], dim=0)
-        elif opt.method == 'CMSC-P':
-            images = images.reshape(-1, 1, 2500, 2)
+        #elif opt.method == 'CMSC-P':
+            #images = images.reshape(-1, 1, 2500, 2)
+        #    images = torch.cat([images[0], images[1]], dim=3)
+
         # warm-up learning rate
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
@@ -203,6 +218,8 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
             elif opt.model == 'CLOCSNET':
                 features, _ = model(images)
                 #_, features = model(images)
+            elif opt.model == 'TCN':
+                features = model(images)
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
         output = classifier(features.detach())
@@ -264,19 +281,25 @@ def validate(val_loader, model, classifier, criterion, opt):
             labels = labels.cuda()
             bsz = labels.shape[0]
 
-            if opt.method == 'CMSC':
+            # 如果使用CMSC，需要把5000的数据截成前后各2500的两段
+            # TODO:待处理
+            if opt.method in ['CMSC', 'CMSC-P']:
                 length = images.shape[2] // 2
                 images = torch.split(images, [length, length], dim=2)
                 images = torch.cat([images[0], images[1]], dim=0)
                 labels = torch.cat([labels, labels], dim=0)
-            elif opt.method == 'CMSC-P':
-                images = images.reshape(-1, 1, 2500, 2)
+            #elif opt.method == 'CMSC-P':
+                # images = images.reshape(-1, 1, 2500, 2)
+            #    images = torch.cat([images[0], images[1]], dim=3)
+
 
             # forward
             if opt.model == 'resnet50':
                 output = classifier(model.encoder(images))
             elif opt.model == 'CLOCSNET':
                 output = classifier(model(images)[0])
+            elif opt.model == 'TCN':
+                output = classifier(model(images))
             else:
                 raise ValueError('model not supported: {}'.format(opt.model))
             loss = criterion(output, labels)
@@ -324,6 +347,11 @@ def main():
     best_acc = 0
     best_auc = 0
     best_loss = 1e5
+    metrics = dict()
+    best_acc_acc = 0
+    best_acc_auc = 0
+    best_auc_acc = 0
+    best_auc_auc = 0
     opt = parse_option()
 
     # build data loader
@@ -364,7 +392,7 @@ def main():
         writer.add_scalar('val_auc', val_auc, epoch)
 
 
-        metrics = dict()
+
         if loss < best_loss:
             metrics['acc'] = val_acc
             metrics['auc'] = val_auc
@@ -372,10 +400,16 @@ def main():
             metrics['recall'] = val_recall
             metrics['f1'] = val_f1
 
+
         if val_acc > best_acc:
             best_acc = val_acc
+            best_acc_acc = val_acc
+            best_acc_auc = val_auc
         if val_auc > best_auc:
             best_auc = val_auc
+            best_auc_acc = val_acc
+            best_auc_auc = val_auc
+
 
     #print('best accuracy: {:.2f}'.format(best_acc))
     #print('best auc: {:.2f}'.format(best_auc))
@@ -384,6 +418,9 @@ def main():
     print('precision: {:.4f}'.format(metrics['precision']))
     print('recall: {:.4f}'.format(metrics['recall']))
     print('f1: {:.4f}'.format(metrics['f1']))
+
+    print('best_acc: acc {:.4f}, auc {:.4f}'.format(best_acc_acc, best_acc_auc))
+    print('best_auc: acc {:.4f}, auc {:.4f}'.format(best_auc_acc, best_auc_auc))
 
 if __name__ == '__main__':
     main()

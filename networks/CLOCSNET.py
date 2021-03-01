@@ -94,6 +94,7 @@ class cnn_network_contrastive(nn.Module):
                 h = self.encoder[n](h)  # nencoders = nviews
                 # 因为前面加了nn.Flatten, 所以下面不需要了
                 h = torch.reshape(h, (h.shape[0], h.shape[1] * h.shape[2]))
+                temp = h
                 h = self.view_linear_modules[n](h)
             else:
                 h = self.encoder[0](h)  # nencoder = 1 (used for all views)
@@ -117,11 +118,14 @@ class second_cnn_network(nn.Module):
         super(second_cnn_network, self).__init__()
         self.first_model = first_model
         self.linear = nn.Linear(embedding_dim, noutputs)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        _, h = self.first_model(x)
+        #_, h = self.first_model(x)
+        h, _ = self.first_model(x)
         h = h.squeeze()  # to get rid of final dimension from torch.empty before
-        output = self.linear(h)
+        h = self.linear(h)
+        output = self.softmax(h)
         return output
 
 class linear_classifier(nn.Module):
@@ -129,7 +133,9 @@ class linear_classifier(nn.Module):
     def __init__(self, feat_dim=c4 * 10, num_classes=4):
         super(linear_classifier, self).__init__()
         self.fc = nn.Linear(feat_dim, num_classes)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, features):
         features = features.squeeze()
-        return self.fc(features)
+        #return self.fc(features)
+        return self.softmax(self.fc(features))

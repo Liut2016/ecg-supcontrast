@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 
+channels = [1, 4, 16, 32]
 
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
@@ -64,12 +65,17 @@ class TemporalConvNet(nn.Module):
         return self.network(x)
 
 class TCN(nn.Module):
-    def __init__(self, num_channels, num_classes, kernel_size=2, dropout=0.2):
+    def __init__(self, num_channels, embedding_dim=128, kernel_size=2, dropout=0.2):
         super(TCN, self).__init__()
         self.tcn = TemporalConvNet(
-            128, num_channels, kernel_size=kernel_size, dropout=dropout)
+            1, num_channels, kernel_size=kernel_size, dropout=dropout)
         self.dropout = nn.Dropout(dropout)
-        self.decoder = nn.Linear(num_channels[-1], num_classes)
+        self.decoder = nn.Linear(num_channels[-1], embedding_dim)
 
     def forward(self, x):
-        return self.decoder(self.dropout(self.tcn(x)[:, :, -1]))
+        x = self.tcn(x)
+        x = x[:, :, -1]
+        x = self.dropout(x)
+        x = self.decoder(x)
+        return x
+        #return self.decoder(self.dropout(self.tcn(x)[:, :, -1]))

@@ -1,12 +1,15 @@
 from __future__ import print_function
 
 import math
+import os
 import numpy as np
 import torch
 import torch.optim as optim
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
-import  warnings
+import warnings
+import ecg_plot
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings('once')
 
@@ -26,6 +29,25 @@ class TwoCropTransform:
             res = [self.transform(x), self.transform(x)]
         return res
 
+class NCropTransform:
+    def __init__(self, transform, method='', nviews=2):
+        self.transform = transform
+        self.method = method
+        self.nviews = nviews
+        pass
+
+    def __call__(self, x):
+        if self.method in ['CMSC', 'CMSC-P']:
+            #temp = x.detach().cpu().numpy()
+            length = x.shape[1] // self.nviews
+            arr = [length for _ in range(self.nviews)]
+            r = torch.split(x, arr, dim=1)
+            res = [self.transform(i) for i in r]
+        elif self.method in ['SimCLR', 'SupCon']:
+            res = [self.transform(x), self.transform(x)]
+        else:
+            raise ValueError('method not supported: {}'.format(self.method))
+        return res
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -63,7 +85,7 @@ def accuracy(output, target, topk=(1,)):
 
 # https://www.cnblogs.com/caiyishuai/p/9435945.html
 # https://blog.csdn.net/u010505915/article/details/106450150
-
+'''
 def calculate_auc(n_class,outputs_list,labels_list,dataset=''):
     if torch.is_tensor(outputs_list):
         outputs_list = outputs_list.detach().cpu().numpy()
@@ -75,7 +97,8 @@ def calculate_auc(n_class,outputs_list,labels_list,dataset=''):
         if n_class != '2':
             all_auc = []
             for i in range(labels_ohe.shape[1]):
-                auc = roc_auc_score(labels_ohe[:,i],outputs_list[:,i])
+                #auc = roc_auc_score(labels_ohe[:,i],outputs_list[:,i])ValueError: multi_class must be in ('ovo', 'ovr')
+                auc = roc_auc_score(labels_list, outputs_list, multi_class='ovo')
                 all_auc.append(auc)
             epoch_auroc = np.mean(all_auc)
         elif n_class == '2':
@@ -91,6 +114,17 @@ def calculate_auc(n_class,outputs_list,labels_list,dataset=''):
     else:
         print('This is not a classification problem!')
     return epoch_auroc
+'''
+# https://scikit-learn.org/stable/modules/generated/sklearn.metrics.roc_auc_score.html#sklearn.metrics.roc_auc_score
+def calculate_auc(n_class,outputs_list,labels_list,dataset=''):
+    if torch.is_tensor(outputs_list):
+        outputs_list = outputs_list.detach().cpu().numpy()
+    if torch.is_tensor(labels_list):
+        labels_list = labels_list.detach().cpu().numpy()
+
+    auc = roc_auc_score(labels_list, outputs_list, multi_class='ovo')
+    return auc
+    pass
 
 def calculate_other_metrics(output, target, average='macro'):
     if torch.is_tensor(output):
@@ -132,10 +166,18 @@ def warmup_learning_rate(args, epoch, batch_id, total_batches, optimizer):
 
 
 def set_optimizer(opt, model):
+
     optimizer = optim.SGD(model.parameters(),
                           lr=opt.learning_rate,
                           momentum=opt.momentum,
                           weight_decay=opt.weight_decay)
+
+    '''
+    optimizer = optim.Adam(model.parameters(),
+                          lr=opt.learning_rate,
+                          #momentum=opt.momentum,
+                          weight_decay=opt.weight_decay)
+    '''
     return optimizer
 
 
@@ -185,7 +227,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model)
         elif score < self.best_score + self.delta:
             self.counter += 1
-            self.trace_func('EarlyStopping counter: {self.counter} out of {self.patience}')
+            self.trace_func('EarlyStopping counter: {counter} out of {patience}'.format(counter=self.counter, patience=self.patience))
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -196,6 +238,52 @@ class EarlyStopping:
     def save_checkpoint(self, val_loss, model):
         '''Saves model when validation loss decrease.'''
         if self.verbose:
-            self.trace_func('Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+            self.trace_func('Validation loss decreased ({val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...'.format(val_loss_min=self.val_loss_min, val_loss=val_loss))
         torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
+
+# https://github.com/dy1901/ecg_plot
+# https://github.com/Noploop/ecg_plot
+# https://www.cnpython.com/pypi/ecg-plot
+# https://blog.csdn.net/oscar6280868/article/details/104962792
+
+def plot_ecg(data, sample_rate=500):
+    if torch.is_tensor(data):
+        data = data.detach().cpu().numpy()
+    if len(data.shape) > 2:
+        data = data.squeeze(2)
+    ecg_plot.plot_1(data[0], sample_rate=sample_rate, title='test')
+    ecg_plot.show()
+    #plt.plot(data[0])
+    #plt.show()
+    pass
+
+def plot_aug(data, data_aug, header_data, label, name, j, aug, save_path):
+    fig, axs = plt.subplots(12, 1, sharey=True, figsize=(50, 50))
+
+    data = data.numpy()
+    data_aug = data_aug.numpy()
+
+    for i in range(12):
+        axs[i].plot(data[i])
+        axs[i].plot(data_aug[i], color = 'red')
+        axs[i].set_title(header_data[i+1])
+        axs[i].autoscale(enable=True, axis='both', tight=True)
+
+    label = list(label)
+    save_path_label = label[0]
+    if len(label) > 1:
+        for i in range(len(label)-1):
+            save_path_label += ' %s' %(label[i+1])
+
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
+
+    save_path_label = os.path.join(save_path, save_path_label)
+
+    if not os.path.exists(save_path_label):
+        os.mkdir(save_path_label)
+
+    plt.savefig(os.path.join(save_path_label, '%s_%d_%s.png' %(name, j, aug)))
+    plt.show()
+    plt.close()
