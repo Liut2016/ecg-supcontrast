@@ -63,7 +63,7 @@ dataset = 'chapman'
 #basepath = '../data/raw_data/Chapman'
 basepath = '/data/liutao/Chapman'
 
-trial = 'contrastive_ss'  # '' | 'contrastive_ms' | 'contrastive_ml' | 'contrastive_msml' | 'contrastive_ss'
+trial = 'contrastive_ml'  # '' | 'contrastive_ms' | 'contrastive_ml' | 'contrastive_msml' | 'contrastive_ss'
 
 files = os.listdir(os.path.join(basepath, 'ECGDataDenoised'))
 database = pd.read_excel(os.path.join(basepath, 'Diagnostics.xlsx'))
@@ -145,8 +145,8 @@ sampling_rate = 500
 modality_list = ['ecg']
 fraction_list = [1]
 leads = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
-#desired_leads = ['II', 'V2', 'aVL', 'aVR']  # ['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']
-desired_leads = ['II']
+desired_leads = ['II', 'V2', 'aVL', 'aVR']  # ['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']
+#desired_leads = ['II']
 inputs_dict = dict()
 outputs_dict = dict()
 pids = dict()

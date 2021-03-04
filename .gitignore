@@ -133,3 +133,4 @@ dmypy.json
 save/
 runs/
 pic/
+!/runs/log.md

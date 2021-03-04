@@ -301,8 +301,8 @@ class Permutation(object):
         Returns:
             Tensor: Scaled Tensor.
         """
-
-        X_new = torch.zeros(tensors.shape, dtype=torch.int64)
+        # 注意X_new的dtype要改成float，否则无法生成希望的效果
+        X_new = torch.zeros(tensors.shape, dtype=torch.float)
         idx = torch.randperm(self.nPerm)
         bWhile = True
         while bWhile == True:

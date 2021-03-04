@@ -33,7 +33,7 @@ except ImportError:
     pass
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -176,8 +176,8 @@ def set_loader(opt):
         #RandSampling(nSample=2500),
         #Scaling(),
         #MagWarp(),
-        TimeWarp(),
-        #Permutation(nPerm=10),
+        #TimeWarp(),
+        Permutation(nPerm=5, minSegLength=250),
         #Rotation(), # 有错误
         dataReshape(4)
     ])
@@ -400,7 +400,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last-0228-supcontimewarp.pth')
+        opt.save_folder, 'last-0303-simclrpermutation-n5l250.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 

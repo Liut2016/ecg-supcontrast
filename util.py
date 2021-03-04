@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_sco
 import warnings
 import ecg_plot
 import matplotlib.pyplot as plt
+from transforms_ecg import dataReshape, Jitter, Scaling, MagWarp, TimeWarp, Rotation, Permutation, RandSampling
 
 warnings.filterwarnings('once')
 
@@ -47,6 +48,10 @@ class NCropTransform:
             res = [self.transform(x), self.transform(x)]
         else:
             raise ValueError('method not supported: {}'.format(self.method))
+
+        #plot_aug(res[0], sample_rate=250, aug='Permutation')
+        #plot_ecg(x, sample_rate=250)
+        #plot_ecg(res[0], sample_rate=250)
         return res
 
 class AverageMeter(object):
@@ -258,32 +263,31 @@ def plot_ecg(data, sample_rate=500):
     #plt.show()
     pass
 
-def plot_aug(data, data_aug, header_data, label, name, j, aug, save_path):
-    fig, axs = plt.subplots(12, 1, sharey=True, figsize=(50, 50))
+def plot_aug(data, sample_rate=500, aug=''):
+    #if torch.is_tensor(data):
+    #    data = data.detach().cpu().numpy()
+    if len(data.shape) > 2:
+        data = data.squeeze(2)
 
-    data = data.numpy()
-    data_aug = data_aug.numpy()
+    if aug == 'Timewarp':
+        augmentation = TimeWarp()
+    elif aug == 'Jitter':
+        augmentation = Jitter()
+    elif aug == 'Scaling':
+        augmentation = Scaling()
+    elif aug == 'MagWarp':
+        augmentation = MagWarp()
+    elif aug == 'Permutation':
+        augmentation = Permutation(nPerm=10, minSegLength=100)
+    elif aug == 'RandSampling':
+        augmentation = RandSampling(nSample=2500)
+    else:
+        raise ValueError('augmentation not supported: {}'.format(aug))
 
-    for i in range(12):
-        axs[i].plot(data[i])
-        axs[i].plot(data_aug[i], color = 'red')
-        axs[i].set_title(header_data[i+1])
-        axs[i].autoscale(enable=True, axis='both', tight=True)
 
-    label = list(label)
-    save_path_label = label[0]
-    if len(label) > 1:
-        for i in range(len(label)-1):
-            save_path_label += ' %s' %(label[i+1])
-
-    if not os.path.exists(save_path):
-        os.mkdir(save_path)
-
-    save_path_label = os.path.join(save_path, save_path_label)
-
-    if not os.path.exists(save_path_label):
-        os.mkdir(save_path_label)
-
-    plt.savefig(os.path.join(save_path_label, '%s_%d_%s.png' %(name, j, aug)))
+    data_aug = augmentation(data)
+    data_aug = data_aug[0]
+    data = data[0]
+    data = [data, data_aug]
+    ecg_plot.plot(data, sample_rate=sample_rate, title=aug, columns=1, lead_index=['origin', aug])
     plt.show()
-    plt.close()

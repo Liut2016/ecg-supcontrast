@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 import torch
 import argparse
-from util import plot_ecg
+from util import plot_ecg, plot_aug
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
@@ -146,7 +146,11 @@ if __name__ == '__main__':
         print(data.shape)
         print(label.shape)
         print(len(pid))
-        plot_ecg(data[0], sample_rate=250)
+        # 绘制原始心电图图像
+        #plot_ecg(data[0], sample_rate=250)
+        # 绘制Augmentation效果
+        # aug: Jitter, Scaling, MagWarp, Timewarp, Permutation, RandSampling
+        plot_aug(data[0], sample_rate=250, aug='Permutation')
         print('----------')
         #break
 
