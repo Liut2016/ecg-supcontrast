@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 import torch
 import argparse
-from util import plot_ecg, plot_aug
+from util import plot_ecg, plot_aug, plot_tsne
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
@@ -150,8 +150,8 @@ if __name__ == '__main__':
         #plot_ecg(data[0], sample_rate=250)
         # 绘制Augmentation效果
         # aug: Jitter, Scaling, MagWarp, Timewarp, Permutation, RandSampling
-        plot_aug(data[0], sample_rate=250, aug='Permutation')
+        #plot_aug(data[0], sample_rate=250, aug='Permutation')
         print('----------')
-        #break
+        break
 
     print('success')

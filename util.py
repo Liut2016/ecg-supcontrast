@@ -5,8 +5,11 @@ import os
 import numpy as np
 import torch
 import torch.optim as optim
+import argparse
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
+from sklearn.manifold import TSNE
+import seaborn as sns
 import warnings
 import ecg_plot
 import matplotlib.pyplot as plt
@@ -290,4 +293,18 @@ def plot_aug(data, sample_rate=500, aug=''):
     data = data[0]
     data = [data, data_aug]
     ecg_plot.plot(data, sample_rate=sample_rate, title=aug, columns=1, lead_index=['origin', aug])
+    plt.show()
+
+def plot_tsne(x, y, title='t-SNE'):
+    if torch.is_tensor(x):
+        x = x.detach().cpu().numpy()
+    if torch.is_tensor(y):
+        y = y.detach().cpu().numpy()
+    x = x.reshape(x.shape[0], x.shape[1])
+    #sns.set(rc={'figure.figsize': (11.7, 8.27)})
+    palette = sns.color_palette("bright", 4)
+    tsne = TSNE()
+    X_embedding = tsne.fit_transform(x)
+    ax = sns.scatterplot(X_embedding[:, 0], X_embedding[:, 1], hue=y, legend='full', palette=palette)
+    ax.set_title(title)
     plt.show()
