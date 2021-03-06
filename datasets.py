@@ -49,6 +49,25 @@ class Chapman(Dataset):
                  transform=None,
                  target_transform=None):
 
+        if opt.method in ['SimCLR', 'SupCon']:
+            method = '/contrastive_ss'
+        elif opt.method in ['CMSC', 'CMSC-P']:
+            method = '/contrastive_ms'
+        elif opt.method in ['CMLC', 'CMLC-P']:
+            method = '/contrastive_ml'
+        else:
+            raise ValueError('method not supported: {}'.format(opt.method))
+
+        n_lead = opt.lead
+        if n_lead == 1:
+            lead = '/leads_[\'II\']'
+        elif n_lead == 4:
+            lead = '/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
+        else:
+            raise ValueError('n_lead is not supported')
+
+        path = './data/chapman_ecg' + method + lead
+
         with open(os.path.join(path, 'frames_phases_chapman.pkl'), 'rb') as f:
             data = pickle.load(f)
             data = data['ecg'][1]
@@ -128,8 +147,10 @@ class Chapman(Dataset):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('argument for training')
     parser.add_argument('--model', type=str, default='CLOCSNET')
-    parser.add_argument('--method', type=str, default='SimCLR',
-                        choices=['SupCon', 'SimCLR', 'CMSC'], help='choose method')
+    parser.add_argument('--method', type=str, default='CMLC',
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMLC'], help='choose method')
+    parser.add_argument('--lead', type=int, default=4, help='choose method')
+
     opt = parser.parse_args()
     dataset = Chapman(opt=opt)
 

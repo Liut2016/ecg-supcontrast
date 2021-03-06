@@ -176,34 +176,12 @@ def set_loader(opt):
                                         train=False,
                                         transform=val_transform)
     elif opt.dataset == 'chapman':
-        method = ''
-        lead = ''
-        if opt.method in ['SimCLR', 'SupCon']:
-            method = '/contrastive_ss'
-        elif opt.method in ['CMSC', 'CMSC-P']:
-            method = '/contrastive_ms'
-        elif opt.method in ['CMLC', 'CMLC-P']:
-            method = '/contrastive_ml'
-        else:
-            raise ValueError('method not supported: {}'.format(opt.method))
-
-        n_lead = opt.lead
-        if n_lead == 1:
-            lead = '/leads_[\'II\']'
-        elif n_lead == 4:
-            lead = '/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
-        else:
-            raise ValueError('n_lead is not supported')
-
-        path = './data/chapman_ecg' + method + lead
         train_dataset = Chapman(train=True,
                                 opt=opt,
-                                path=path
                                 #transform=train_transform
                                 )
         val_dataset = Chapman(train=False,
                               opt=opt,
-                              path=path
                               #transform=val_transform
                               )
     else:
