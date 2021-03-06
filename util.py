@@ -44,9 +44,13 @@ class NCropTransform:
         if self.method in ['CMSC', 'CMSC-P']:
             #temp = x.detach().cpu().numpy()
             length = x.shape[1] // self.nviews
-            arr = [length for _ in range(self.nviews)]
+            #arr = [length for _ in range(self.nviews)]
+            arr = [length] * self.nviews
             r = torch.split(x, arr, dim=1)
             res = [self.transform(i) for i in r]
+        elif self.method in ['CMLC', 'CMLC-P']:
+            #r = torch.split(x, dim=2)
+            res = [self.transform(x[:, :, i].reshape(x.shape[0], x.shape[1], 1)) for i in range(x.shape[2])]
         elif self.method in ['SimCLR', 'SupCon']:
             res = [self.transform(x), self.transform(x)]
         else:

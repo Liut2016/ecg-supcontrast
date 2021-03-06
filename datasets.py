@@ -39,6 +39,30 @@ def normalization(data, label):
     norDataSet = norDataSet/np.tile(ranges,(m))
     return norDataSet, label
 
+def normalizationForNleads(data, label):
+    data[np.isnan(data)] = 0
+    lines = []
+    for i in range(data.shape[0]):
+        single_data = data[i]
+        max_arr = single_data.max(axis=0).reshape(single_data.shape[1], 1)
+        min_arr = single_data.min(axis=0).reshape(single_data.shape[1], 1)
+        ranges = max_arr - min_arr
+        # 如果有持续不变的行，则这4个导联的数据都不要了
+        if (ranges == 0).any():
+            lines.append(i)
+            continue
+        # 归一化
+        m = single_data.shape[0]
+        norDataSet = single_data - np.tile(min_arr.T, (m, 1))
+        norDataSet = norDataSet / np.tile(ranges.T, (m, 1))
+        data[i] = norDataSet
+
+    # 删除没有变化的数据
+    data = np.delete(data, lines, 0)
+    label = np.delete(label, lines, 0)
+    return data, label
+
+
 # chapman
 class Chapman(Dataset):
     def __init__(self, opt,
@@ -49,7 +73,7 @@ class Chapman(Dataset):
                  transform=None,
                  target_transform=None):
 
-        if opt.method in ['SimCLR', 'SupCon']:
+        if opt.method in ['SimCLR', 'SupCon', 'CE']:
             method = '/contrastive_ss'
         elif opt.method in ['CMSC', 'CMSC-P']:
             method = '/contrastive_ms'
@@ -88,7 +112,11 @@ class Chapman(Dataset):
             pid = pid['test']['All Terms']
 
         # 归一化
-        data, label = normalization(data, label)
+        # TODO：CMLC暂时还没有进行归一化
+        if opt.method in ['CMLC', 'CMLC-P']:
+            data, label = normalizationForNleads(data, label)
+        else:
+            data, label = normalization(data, label)
         data = torch.from_numpy(data).float()
         label = torch.from_numpy(label).long()
 
@@ -102,12 +130,17 @@ class Chapman(Dataset):
             data = data.permute((0, 2, 1))
         elif opt.model == 'CLOCSNET':
             # for CLOCSNET
+            # CMSC系列长度为5000，因此需要单独分类
             if opt.method in ['CMSC', 'CMSC-P']:
                 len = 5000
             else:
                 len = 2500
-            data = data.reshape(-1, 1, len)
-            data = data.unsqueeze(3)
+            # CMLC系列需要有4个导联，因此需要单独分类
+            if opt.method in ['CMLC', 'CMLC-P']:
+                data = data.unsqueeze(1)
+            else:
+                data = data.reshape(-1, 1, len)
+                data = data.unsqueeze(3)
             #data = data.reshape(-1, 1, len, 1)
             #data = data.reshape(-1, 1, 2500, 2)
             #temp = data[:, :, :, 0]

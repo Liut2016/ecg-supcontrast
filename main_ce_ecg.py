@@ -32,7 +32,7 @@ except ImportError:
 
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -70,7 +70,7 @@ def parse_option():
                         choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P', 'CE'], help='choose method')
 
     # leads of data
-    parser.add_argument('--lead', type=int, default=1, help='choose method')
+    parser.add_argument('--lead', type=int, default=4, help='choose method')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -455,7 +455,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last-0228-ce.pth')
+        opt.save_folder, 'last-0306-ce.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 

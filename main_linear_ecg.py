@@ -28,7 +28,7 @@ except ImportError:
 
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2, 3'
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -63,7 +63,7 @@ def parse_option():
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P', 'CMLC', 'CMLC-P'], help='choose method')
 
     # leads of data
     parser.add_argument('--lead', type=int, default=1, help='choose method')
@@ -206,6 +206,13 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
             images = torch.split(images, [length, length], dim=2)
             images = torch.cat([images[0], images[1]], dim=0)
             labels = torch.cat([labels, labels], dim=0)
+        elif opt.method in ['CMLC', 'CMLC-P']:
+            nviews = 4
+            # arr = [bsz] * nviews
+            arr = [1] * nviews
+            f = torch.split(images, arr, dim=3)
+            images = torch.cat(f, dim=0)
+            labels = torch.cat([labels] * nviews, dim=0)
         #elif opt.method == 'CMSC-P':
             #images = images.reshape(-1, 1, 2500, 2)
         #    images = torch.cat([images[0], images[1]], dim=3)
@@ -291,6 +298,13 @@ def validate(val_loader, model, classifier, criterion, opt):
                 images = torch.split(images, [length, length], dim=2)
                 images = torch.cat([images[0], images[1]], dim=0)
                 labels = torch.cat([labels, labels], dim=0)
+            elif opt.method in ['CMLC', 'CMLC-P']:
+                nviews = 4
+                #arr = [bsz] * nviews
+                arr = [1] * nviews
+                f = torch.split(images, arr, dim=3)
+                images = torch.cat(f, dim=0)
+                labels = torch.cat([labels] * nviews, dim=0)
             #elif opt.method == 'CMSC-P':
                 # images = images.reshape(-1, 1, 2500, 2)
             #    images = torch.cat([images[0], images[1]], dim=3)

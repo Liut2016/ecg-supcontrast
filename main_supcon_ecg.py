@@ -72,7 +72,7 @@ def parse_option():
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P', 'CMLC', 'CMLC-P'], help='choose method')
     # leads of data
     parser.add_argument('--lead', type=int, default=1, help='choose method')
 
@@ -178,8 +178,8 @@ def set_loader(opt):
         #RandSampling(nSample=2500),
         #Scaling(),
         #MagWarp(),
-        #TimeWarp(),
-        Permutation(nPerm=5, minSegLength=250),
+        TimeWarp(),
+        #Permutation(nPerm=5, minSegLength=250),
         #Rotation(), # 有错误
         dataReshape(4)
     ])
@@ -275,7 +275,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 
         # 在transform中加入了NCrop，可以将数据裁成nviews段，这里需要将各段拼合起来 [bsz*nviews, 1, len]
         # 但是CMSC-P特殊，因为CLOCS中计算loss需要[bsz, embedding_dim, nviews]
-        if opt.method == 'CMSC-P':
+        if opt.method in ['CMSC-P', 'CMLC-P']:
             #images = images.reshape(-1, 1, 2500, 2)
             images = torch.cat(images, dim=3)
         else:
@@ -304,21 +304,33 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         #features = model(images)  # [bsz*2, 1, 2500, nviews]
 
         # TODO：待完善
-        if opt.method == 'CMSC-P':
+        if opt.method in ['CMSC-P', 'CMLC-P']:
             pass
         else:
             # 这里没有对 nviews ！= 2 的情况做处理， 也没有对非CLOCSNET情况做处理
-            f1, f2 = torch.split(features, [bsz, bsz], dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
-            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [bsz, 2, embedding_dim, nviews]
+            #f1, f2 = torch.split(features, [bsz, bsz], dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
+            #features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)  # [bsz, 2, embedding_dim, nviews]
+            #if opt.model == 'CLOCSNET':
+            #    features = features.squeeze(3)
+            if opt.method in ['CMLC']:
+                nviews = 4
+            else:
+                nviews = 2
+
+            arr = [bsz] * nviews
+            f = torch.split(features, arr, dim=0)   # f1 f2 [bsz, embedding_dim, nviews]
+            features = torch.cat([i.unsqueeze(1) for i in f], dim=1)  # [bsz, 2, embedding_dim, nviews]
             if opt.model == 'CLOCSNET':
                 features = features.squeeze(3)
 
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
-        elif opt.method in ['SimCLR', 'CMSC']:
+        elif opt.method in ['SimCLR', 'CMSC', 'CMLC']:
             loss = criterion(features)
         elif opt.method in ['CMSC-P']:
             loss = obtain_contrastive_loss(features, pids, 'CMSC')
+        elif opt.method in ['CMLC-P']:
+            loss = obtain_contrastive_loss(features, pids, 'CMLC')
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
@@ -403,7 +415,7 @@ def main():
 
     # save the last model
     save_file = os.path.join(
-        opt.save_folder, 'last-0303-simclrpermutation-n5l250.pth')
+        opt.save_folder, 'last-0306-supcontimewarp.pth')
     save_model(model, optimizer, opt, opt.epochs, save_file)
 
 
