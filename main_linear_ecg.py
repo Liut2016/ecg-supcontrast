@@ -65,6 +65,9 @@ def parse_option():
     parser.add_argument('--method', type=str, default='SupCon',
                         choices=['SupCon', 'SimCLR', 'CMSC', 'CMSC-P'], help='choose method')
 
+    # leads of data
+    parser.add_argument('--lead', type=int, default=1, help='choose method')
+
     # other setting
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')

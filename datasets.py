@@ -43,16 +43,11 @@ def normalization(data, label):
 class Chapman(Dataset):
     def __init__(self, opt,
                  #path='./data/chapman_ecg/contrastive_ss/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']',
-                 path='./data/chapman_ecg/contrastive_ss/leads_[\'II\']',
+                 #path='./data/chapman_ecg/contrastive_ss/leads_[\'II\']',
+                 path='',
                  train=True,
                  transform=None,
                  target_transform=None):
-
-        if opt.method in ['CMSC', 'CMSC-P']:
-            #path = './data/chapman_ecg/contrastive_ms/leads_[\'II\', \'V2\', \'aVL\', \'aVR\']'
-            path = './data/chapman_ecg/contrastive_ms/leads_[\'II\']'
-        else:
-            pass
 
         with open(os.path.join(path, 'frames_phases_chapman.pkl'), 'rb') as f:
             data = pickle.load(f)
